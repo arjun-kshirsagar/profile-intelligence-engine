@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4.1-mini"
+    groq_api_key: Optional[str] = None
+    groq_model: str = "llama-3.3-70b-versatile"
     llm_reflection_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

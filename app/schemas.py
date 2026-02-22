@@ -17,3 +17,4 @@ class EvaluationResponse(BaseModel):
     deterministic_score: int
     llm_score_adjustment: int
     signals: dict
+    scrape_failures: list[dict]

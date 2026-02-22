@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "profile-intelligence-engine"
+version = "0.1.0"
+description = "Profile Intelligence Engine (MVP)"
+authors = ["Arjun Kshirsagar <kshirsagararjun20@gmail.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "0.115.0"
+uvicorn = {extras = ["standard"], version = "0.30.6"}
+httpx = "0.27.2"
+beautifulsoup4 = "4.12.3"
+sqlalchemy = "2.0.35"
+psycopg = {extras = ["binary"], version = ">=3.2.1"}
+pydantic = "2.9.2"
+pydantic-settings = "2.5.2"
+openai = "1.47.0"
+langchain = "1.2.10"
+langchain-groq = "1.1.2"
+alembic = "^1.18.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

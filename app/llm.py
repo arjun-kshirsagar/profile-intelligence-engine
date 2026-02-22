@@ -23,10 +23,10 @@ def build_profile_summary(signals: dict[str, Any]) -> str:
 
 
 def reflective_score_adjustment(signals: dict[str, Any], deterministic_score: int) -> tuple[int, str]:
-    if not settings.llm_reflection_enabled or not settings.openai_api_key:
+    if not settings.llm_reflection_enabled or not settings.groq_api_key:
         return 0, "LLM reflection disabled."
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.groq_api_key)
     summary = build_profile_summary(signals)
 
     prompt = (
@@ -51,3 +51,42 @@ def reflective_score_adjustment(signals: dict[str, Any], deterministic_score: in
         return adjustment, reasoning
     except Exception:
         return 0, "LLM reflection unavailable, deterministic score used."
+
+
+def generate_scraper_script(
+    source: str,
+    url: str,
+    html_sample: str,
+    previous_errors: list[str],
+) -> str | None:
+    if not settings.openai_api_key:
+        return None
+
+    client = OpenAI(api_key=settings.openai_api_key)
+    sample = html_sample[:5000]
+    errors = "\n".join(f"- {e}" for e in previous_errors[:5]) or "- none"
+
+    prompt = (
+        "Generate a Python scraper function for BeautifulSoup parsing. "
+        "Return strict JSON only with key script_code. "
+        "The code must define extract(html: str, url: str) -> dict with keys text and metadata. "
+        "Keep it robust to missing fields and avoid imports.\n\n"
+        f"Source: {source}\n"
+        f"URL: {url}\n"
+        f"Previous errors:\n{errors}\n\n"
+        f"HTML sample:\n{sample}"
+    )
+
+    try:
+        response = client.responses.create(
+            model=settings.openai_model,
+            input=prompt,
+            temperature=0.1,
+        )
+        payload = json.loads(response.output_text.strip())
+        script_code = payload.get("script_code")
+        if isinstance(script_code, str) and "def extract" in script_code:
+            return script_code
+        return None
+    except Exception:
+        return None

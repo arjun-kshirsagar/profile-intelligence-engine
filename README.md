@@ -10,17 +10,29 @@ Build a minimal engine that ingests a person's public profile links, extracts st
 - LinkedIn scraping avoided due to ToS and anti-bot protections.
 
 ## 3. Architecture
-`Client -> FastAPI -> Scraper -> Signal Extractor -> Scoring Engine -> PostgreSQL -> Response`
+`Client -> FastAPI -> Scraper Agent -> Signal Extractor -> Scoring Engine -> PostgreSQL -> Response`
 
 Components:
 - `app/main.py`: API routes and persistence.
-- `app/scrapers.py`: Async scraping with `httpx` + HTML parsing (`BeautifulSoup`).
+- `app/scrapers.py`: Agentic scraper runtime with `httpx` + `BeautifulSoup`.
 - `app/extractors.py`: Signal extraction from scraped text and metadata.
 - `app/scoring.py`: Deterministic weighted scoring and decisioning.
-- `app/llm.py`: Optional reflective layer (OpenAI) to critique deterministic score.
-- `app/models.py`: SQLAlchemy evaluation record.
+- `app/llm.py`: Optional reflective layer + optional scraper script generator.
+- `app/models.py`: SQLAlchemy models for evaluations, scraper scripts, and execution logs.
 
-## 4. Scoring philosophy
+## 4. Scraper-agent loop
+For each source (`github`, `website`, `twitter`):
+1. Fetch HTML.
+2. Try active scripts from `scraper_scripts` (best-performing first).
+3. If a script succeeds, use it and update success metrics.
+4. If a script fails, capture `script_code` + `error` and keep trying.
+5. If all fail, optionally ask LLM to generate a replacement parser script.
+6. If generated script succeeds, save it to DB for future runs.
+7. If generation fails, return failure diagnostics in API response.
+
+This gives agent-like adaptation without full multi-agent orchestration.
+
+## 5. Scoring philosophy
 ### Weighted model
 ```python
 weights = {
@@ -37,34 +49,22 @@ Threshold is `70`:
 - `score >= 70` => `ACCEPT`
 - `score < 70` => `REJECT`
 
-Example output:
-```json
-{
-  "score": 78,
-  "decision": "ACCEPT",
-  "reasoning": "Strong public impact + leadership indicators"
-}
-```
-
-### Why hybrid evaluation
-Deterministic scoring provides consistency and transparency.
-The optional reflective LLM step critiques edge cases where context matters (for example, non-GitHub signals for elite operators).
-
 Top 1% is relative - this MVP uses proxy signals.
 
-## 5. Tradeoffs
+## 6. Tradeoffs
 - Twitter/X pages can be partially dynamic, so extraction quality can vary.
+- Executing dynamic scraper scripts needs hardening before production sandboxing.
 - Public internet signals can over-represent people who publish more content.
 - Bias and fairness concerns must be addressed.
 - Manual review loop recommended.
 - Cold start problem exists for private individuals.
 
-## 6. Future improvements
-- Add robust adapters per source (GitHub API mode, richer website crawling constraints).
+## 7. Future improvements
+- Add strict sandboxing for script execution (separate process + resource limits).
+- Add richer script quality checks before activation.
 - Add confidence intervals and uncertainty scoring.
 - Add evaluator calibration dataset and regression tests.
 - Future: network graph centrality scoring.
-- Add human-in-the-loop override workflow.
 
 ## API
 ### `POST /evaluate`
@@ -78,25 +78,25 @@ Request body:
 }
 ```
 
-Response body:
+Response includes `scrape_failures` whenever any script attempts fail:
 ```json
 {
-  "score": 78,
+  "score": 74,
   "decision": "ACCEPT",
   "reasoning": "Strong signals in impact, leadership.",
   "deterministic_score": 74,
-  "llm_score_adjustment": 4,
-  "signals": {
-    "name": "Jane Doe",
-    "public_repos": 42,
-    "followers": 820,
-    "has_founder_keyword": true,
-    "years_experience": 9,
-    "speaking_mentions": 3,
-    "blog_count": 5,
-    "twitter_bio_present": true,
-    "source_count": 3
-  }
+  "llm_score_adjustment": 0,
+  "signals": {},
+  "scrape_failures": [
+    {
+      "source": "github",
+      "url": "https://github.com/janedoe",
+      "script_id": 1,
+      "script_name": "default_github_v1",
+      "script_code": "def extract(...)",
+      "error": "ValueError: ..."
+    }
+  ]
 }
 ```
 
@@ -104,7 +104,7 @@ Response body:
 1. Create Postgres DB (example: `profile_engine`).
 2. Install deps:
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
