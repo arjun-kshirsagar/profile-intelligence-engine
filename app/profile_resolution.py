@@ -10,9 +10,9 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 
 from app.config import get_settings
-from app.search_provider import SearchResult, search_web
-from app.logger import logger
 from app.llm.tools import generate_search_queries
+from app.logger import logger
+from app.search_provider import SearchResult, search_web
 
 settings = get_settings()
 
@@ -51,6 +51,8 @@ MAJOR_NEWS_DOMAINS = {
     "economictimes.indiatimes.com",
     "business-standard.com",
 }
+
+
 @dataclass
 class Candidate:
     result: SearchResult
@@ -130,7 +132,9 @@ def _string_match(input_value: Optional[str], extracted_value: Optional[str]) ->
     return 0.0
 
 
-def _weighted_attribute_match(input_payload: dict[str, Optional[str]], extracted: dict[str, Optional[str]]) -> float:
+def _weighted_attribute_match(
+    input_payload: dict[str, Optional[str]], extracted: dict[str, Optional[str]]
+) -> float:
     active_weights = {
         key: weight
         for key, weight in ATTRIBUTE_WEIGHTS.items()
@@ -170,7 +174,7 @@ def _build_queries(input_payload: dict[str, Optional[str]]) -> tuple[list[str], 
             linkedin_url=linkedin_url,
             company=company,
             designation=designation,
-            location=location
+            location=location,
         )
         if not queries:
             queries = [name]
@@ -190,9 +194,13 @@ async def _search_queries(queries: list[str], max_per_query: int) -> list[Search
     return list(dedup.values())
 
 
-async def _fetch_page_text(client: httpx.AsyncClient, url: str, max_chars: int = 5000) -> str:
+async def _fetch_page_text(
+    client: httpx.AsyncClient, url: str, max_chars: int = 5000
+) -> str:
     try:
-        response = await client.get(url, follow_redirects=True, timeout=httpx.Timeout(10.0))
+        response = await client.get(
+            url, follow_redirects=True, timeout=httpx.Timeout(10.0)
+        )
         response.raise_for_status()
     except httpx.HTTPError:
         return ""
@@ -204,23 +212,39 @@ async def _fetch_page_text(client: httpx.AsyncClient, url: str, max_chars: int =
     return text[:max_chars]
 
 
-def _heuristic_extract(result: SearchResult, page_text: str) -> dict[str, Optional[str]]:
+def _heuristic_extract(
+    result: SearchResult, page_text: str
+) -> dict[str, Optional[str]]:
     blob = _normalize_whitespace(f"{result.title}. {result.snippet}. {page_text}")
 
-    company_match = re.search(r"\b(?:at|with|from)\s+([A-Z][A-Za-z0-9&.\- ]{1,40})", blob)
-    location_match = re.search(r"\b(?:based in|located in|from)\s+([A-Z][A-Za-z .\-]{1,40})", blob)
+    company_match = re.search(
+        r"\b(?:at|with|from)\s+([A-Z][A-Za-z0-9&.\- ]{1,40})", blob
+    )
+    location_match = re.search(
+        r"\b(?:based in|located in|from)\s+([A-Z][A-Za-z .\-]{1,40})", blob
+    )
 
     return {
         "name": None,
-        "company": _normalize_whitespace(company_match.group(1)).rstrip(".,;") if company_match else None,
+        "company": (
+            _normalize_whitespace(company_match.group(1)).rstrip(".,;")
+            if company_match
+            else None
+        ),
         "designation": None,
-        "location": _normalize_whitespace(location_match.group(1)).rstrip(".,;") if location_match else None,
+        "location": (
+            _normalize_whitespace(location_match.group(1)).rstrip(".,;")
+            if location_match
+            else None
+        ),
         "education": None,
         "short_bio": blob[:280] if blob else None,
     }
 
 
-def _llm_extract(result: SearchResult, page_text: str) -> Optional[dict[str, Optional[str]]]:
+def _llm_extract(
+    result: SearchResult, page_text: str
+) -> Optional[dict[str, Optional[str]]]:
     if not settings.openai_api_key:
         return None
 
@@ -268,7 +292,11 @@ async def _extract_candidates(
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=timeout) as client:
         tasks = [
-            _fetch_page_text(client, result.url) if index < full_fetch_limit else asyncio.sleep(0, result= "")
+            (
+                _fetch_page_text(client, result.url)
+                if index < full_fetch_limit
+                else asyncio.sleep(0, result="")
+            )
             for index, result in enumerate(ranked_results)
         ]
         page_texts = await asyncio.gather(*tasks, return_exceptions=False)
@@ -276,7 +304,9 @@ async def _extract_candidates(
     candidates: list[Candidate] = []
 
     for result, page_text in zip(ranked_results, page_texts):
-        extracted = _llm_extract(result, page_text) or _heuristic_extract(result, page_text)
+        extracted = _llm_extract(result, page_text) or _heuristic_extract(
+            result, page_text
+        )
 
         if not extracted.get("name") and input_payload.get("name"):
             extracted["name"] = input_payload["name"]
@@ -300,7 +330,9 @@ async def _extract_candidates(
     return candidates[:max_sources]
 
 
-def _build_clarification_question(input_payload: dict[str, Optional[str]], top_candidate: Optional[Candidate]) -> str:
+def _build_clarification_question(
+    input_payload: dict[str, Optional[str]], top_candidate: Optional[Candidate]
+) -> str:
     name = input_payload.get("name") or "this person"
     company = top_candidate.extracted.get("company") if top_candidate else None
     role = top_candidate.extracted.get("designation") if top_candidate else None
@@ -312,21 +344,31 @@ def _build_clarification_question(input_payload: dict[str, Optional[str]], top_c
     return f"Multiple profiles match for {name}. Can you confirm company, role, or location?"
 
 
-def _resolve_identity(candidates: list[Candidate], input_payload: dict[str, Optional[str]]) -> tuple[bool, Optional[str], float]:
+def _resolve_identity(
+    candidates: list[Candidate], input_payload: dict[str, Optional[str]]
+) -> tuple[bool, Optional[str], float]:
     if not candidates:
         return True, None, 0.0
 
     top_score = candidates[0].attribute_match_score
     second_score = candidates[1].attribute_match_score if len(candidates) > 1 else 0.0
 
-    ambiguous = top_score < 0.6 or (len(candidates) > 1 and (top_score - second_score) < 0.15)
+    ambiguous = top_score < 0.6 or (
+        len(candidates) > 1 and (top_score - second_score) < 0.15
+    )
     if ambiguous:
-        return False, _build_clarification_question(input_payload, candidates[0]), top_score
+        return (
+            False,
+            _build_clarification_question(input_payload, candidates[0]),
+            top_score,
+        )
 
     return True, None, top_score
 
 
-def _aggregate_identity(candidates: list[Candidate], resolved_confidence: float) -> dict[str, Any]:
+def _aggregate_identity(
+    candidates: list[Candidate], resolved_confidence: float
+) -> dict[str, Any]:
     if not candidates:
         return {
             "name": None,
@@ -354,15 +396,24 @@ def _aggregate_identity(candidates: list[Candidate], resolved_confidence: float)
     }
 
 
-def _build_summary(candidates: list[Candidate], ambiguity_flag: bool, clarification_question: Optional[str]) -> str:
+def _build_summary(
+    candidates: list[Candidate],
+    ambiguity_flag: bool,
+    clarification_question: Optional[str],
+) -> str:
     if ambiguity_flag:
-        question = clarification_question or "Please provide one more qualifier to resolve identity."
+        question = (
+            clarification_question
+            or "Please provide one more qualifier to resolve identity."
+        )
         return f"Identity is ambiguous across discovered sources. {question}"
 
     if not candidates:
         return "No reliable public sources were found to build a summary."
 
-    top_sources = sorted(candidates, key=lambda item: item.source_confidence, reverse=True)[:4]
+    top_sources = sorted(
+        candidates, key=lambda item: item.source_confidence, reverse=True
+    )[:4]
     fragments = []
     for item in top_sources:
         info = item.extracted
@@ -445,15 +496,21 @@ async def resolve_profile(
     )
 
     ambiguity_flag = (not is_resolved) or ambiguity_risk
-    if ambiguity_risk and not input_payload.get("company") and not clarification_question:
-        clarification_question = (
-            "Name-only input has high ambiguity. Can you share company, designation, or location?"
-        )
+    if (
+        ambiguity_risk
+        and not input_payload.get("company")
+        and not clarification_question
+    ):
+        clarification_question = "Name-only input has high ambiguity. Can you share company, designation, or location?"
 
     resolved_confidence = top_attribute_score
     if not ambiguity_flag and candidates:
-        top_sources = sorted(candidates, key=lambda item: item.source_confidence, reverse=True)[:5]
-        resolved_confidence = round(sum(item.source_confidence for item in top_sources) / len(top_sources), 3)
+        top_sources = sorted(
+            candidates, key=lambda item: item.source_confidence, reverse=True
+        )[:5]
+        resolved_confidence = round(
+            sum(item.source_confidence for item in top_sources) / len(top_sources), 3
+        )
 
     resolved_identity = _aggregate_identity(candidates, resolved_confidence)
     source_payload = [
@@ -464,7 +521,9 @@ async def resolve_profile(
             "confidence": candidate.source_confidence,
             "extracted_info": candidate.extracted,
         }
-        for candidate in sorted(candidates, key=lambda item: item.source_confidence, reverse=True)
+        for candidate in sorted(
+            candidates, key=lambda item: item.source_confidence, reverse=True
+        )
     ]
 
     summary = _build_summary(candidates, ambiguity_flag, clarification_question)

@@ -1,5 +1,5 @@
-import re
 import json
+import re
 import traceback
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.llm.tools import generate_scraper_script
-from app.models import ScraperExecutionLog, ScraperScript
 from app.logger import logger
+from app.models import ScraperExecutionLog, ScraperScript
 
 settings = get_settings()
 
@@ -23,6 +23,7 @@ DEFAULT_HEADERS = {
         "Chrome/123.0.0.0 Safari/537.36"
     )
 }
+
 
 @dataclass
 class ScrapeResult:
@@ -381,7 +382,9 @@ async def scrape_sources(
                         "error": "Unable to fetch HTML from source URL",
                     }
                 )
-                out.append(ScrapeResult(source=source, url=url, ok=False, text="", metadata={}))
+                out.append(
+                    ScrapeResult(source=source, url=url, ok=False, text="", metadata={})
+                )
                 continue
 
             scripts = _candidate_scripts(db, source)
@@ -424,6 +427,8 @@ async def scrape_sources(
             if success_result:
                 out.append(success_result)
             else:
-                out.append(ScrapeResult(source=source, url=url, ok=False, text="", metadata={}))
+                out.append(
+                    ScrapeResult(source=source, url=url, ok=False, text="", metadata={})
+                )
 
     return out, failures

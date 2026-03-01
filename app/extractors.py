@@ -22,9 +22,15 @@ def _extract_years_experience(text: str) -> int:
 def extract_signals(name: str, scraped: list[ScrapeResult]) -> dict[str, Any]:
     combined_text = " ".join([result.text for result in scraped if result.ok]).lower()
 
-    github_meta = next((r.metadata for r in scraped if r.source == "github" and r.ok), {})
-    website_meta = next((r.metadata for r in scraped if r.source == "website" and r.ok), {})
-    twitter_meta = next((r.metadata for r in scraped if r.source == "twitter" and r.ok), {})
+    github_meta = next(
+        (r.metadata for r in scraped if r.source == "github" and r.ok), {}
+    )
+    website_meta = next(
+        (r.metadata for r in scraped if r.source == "website" and r.ok), {}
+    )
+    twitter_meta = next(
+        (r.metadata for r in scraped if r.source == "twitter" and r.ok), {}
+    )
 
     speaking_mentions = sum(combined_text.count(k) for k in SPEAKING_KEYWORDS)
 

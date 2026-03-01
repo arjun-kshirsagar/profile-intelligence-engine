@@ -146,12 +146,12 @@ async def create_evaluation_job(
     person = db.query(Person).filter(Person.linkedin_url == payload.input_value).first()
     if not person:
         person = Person(
-            linkedin_url=payload.input_value
-            if payload.input_type == "linkedin_url"
-            else None,
-            github_url=payload.input_value
-            if payload.input_type == "github_url"
-            else None,
+            linkedin_url=(
+                payload.input_value if payload.input_type == "linkedin_url" else None
+            ),
+            github_url=(
+                payload.input_value if payload.input_type == "github_url" else None
+            ),
         )
         db.add(person)
         db.flush()  # To get the ID for evaluation
@@ -187,10 +187,14 @@ async def get_evaluation_status(
         "evaluation_id": evaluation.id,
         "status": evaluation.status.value,
         "stage": evaluation.stage.value if evaluation.stage else None,
-        "final_score": evaluation.final_score
-        if evaluation.status == EvaluationStatus.COMPLETED
-        else None,
-        "decision": evaluation.decision
-        if evaluation.status == EvaluationStatus.COMPLETED
-        else None,
+        "final_score": (
+            evaluation.final_score
+            if evaluation.status == EvaluationStatus.COMPLETED
+            else None
+        ),
+        "decision": (
+            evaluation.decision
+            if evaluation.status == EvaluationStatus.COMPLETED
+            else None
+        ),
     }

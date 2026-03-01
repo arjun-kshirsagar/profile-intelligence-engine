@@ -2,8 +2,8 @@ import anthropic
 
 from app.llm.base import BaseLLM
 
-class ClaudeClient(BaseLLM):
 
+class ClaudeClient(BaseLLM):
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
 
@@ -12,6 +12,6 @@ class ClaudeClient(BaseLLM):
             model="claude-3-5-sonnet-20241022",
             max_tokens=1000,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}]
+            messages=[{"role": "user", "content": user_prompt}],
         )
         return message.content[0].text

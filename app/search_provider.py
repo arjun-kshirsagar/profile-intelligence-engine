@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
@@ -50,7 +49,9 @@ async def google_cse_search(query: str, limit: int = 5) -> list[SearchResult]:
 
     num = max(1, min(10, limit))
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.request_timeout_seconds)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(settings.request_timeout_seconds)
+        ) as client:
             response = await client.get(
                 "https://www.googleapis.com/customsearch/v1",
                 params={
@@ -65,7 +66,9 @@ async def google_cse_search(query: str, limit: int = 5) -> list[SearchResult]:
         logger.error(f"Google CSE search failed for query '{query}': {e}")
         return []
 
-    logger.info(f"Google CSE returned {len(response.json().get('items', []))} items for query '{query}'")
+    logger.info(
+        f"Google CSE returned {len(response.json().get('items', []))} items for query '{query}'"
+    )
     payload = response.json()
     items = payload.get("items", [])
     results: list[SearchResult] = []
@@ -94,7 +97,9 @@ async def duckduckgo_search_html(query: str, limit: int = 5) -> list[SearchResul
             timeout=httpx.Timeout(settings.request_timeout_seconds),
             follow_redirects=True,
         ) as client:
-            response = await client.get("https://duckduckgo.com/html/", params={"q": query})
+            response = await client.get(
+                "https://duckduckgo.com/html/", params={"q": query}
+            )
             response.raise_for_status()
     except httpx.HTTPError as e:
         logger.error(f"DuckDuckGo search failed for query '{query}': {e}")
@@ -113,7 +118,9 @@ async def duckduckgo_search_html(query: str, limit: int = 5) -> list[SearchResul
             continue
 
         snippet_el = block.select_one(".result__snippet")
-        snippet = _normalize_whitespace(snippet_el.get_text(" ", strip=True) if snippet_el else "")
+        snippet = _normalize_whitespace(
+            snippet_el.get_text(" ", strip=True) if snippet_el else ""
+        )
 
         results.append(
             SearchResult(

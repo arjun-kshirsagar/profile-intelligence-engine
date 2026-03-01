@@ -8,8 +8,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.config import get_settings
-from app.logger import logger
 from app.llm.tools import generate_search_queries
+from app.logger import logger
 
 settings = get_settings()
 
@@ -120,8 +120,16 @@ def _score_hit_identity(
     if source in {"linkedin", "github", "news"}:
         source_bonus = 0.1
 
-    fallback_base = 0.3 if (not name_tokens and linkedin_url and linkedin_direct_bonus > 0) else 0.0
-    raw = fallback_base + (0.48 * name_score) + qualifier_score + linkedin_direct_bonus + source_bonus
+    fallback_base = (
+        0.3 if (not name_tokens and linkedin_url and linkedin_direct_bonus > 0) else 0.0
+    )
+    raw = (
+        fallback_base
+        + (0.48 * name_score)
+        + qualifier_score
+        + linkedin_direct_bonus
+        + source_bonus
+    )
     return round(min(1.0, max(0.0, raw)), 3)
 
 
@@ -139,7 +147,9 @@ def _extract_name_from_linkedin(linkedin_url: str) -> Optional[str]:
     return None
 
 
-async def _search_duckduckgo(client: httpx.AsyncClient, query: str, limit: int) -> list[dict[str, str]]:
+async def _search_duckduckgo(
+    client: httpx.AsyncClient, query: str, limit: int
+) -> list[dict[str, str]]:
     try:
         response = await client.get(
             "https://duckduckgo.com/html/",
@@ -176,7 +186,9 @@ async def _search_duckduckgo(client: httpx.AsyncClient, query: str, limit: int) 
     return out
 
 
-async def _search_google_html(client: httpx.AsyncClient, query: str, limit: int) -> list[dict[str, str]]:
+async def _search_google_html(
+    client: httpx.AsyncClient, query: str, limit: int
+) -> list[dict[str, str]]:
     try:
         response = await client.get(
             "https://www.google.com/search",
@@ -199,7 +211,11 @@ async def _search_google_html(client: httpx.AsyncClient, query: str, limit: int)
         if not href or href.startswith("/search?"):
             continue
         snippet_el = block.select_one("div.VwiC3b") or block.select_one("span.aCOpRe")
-        snippet = _normalize_whitespace(snippet_el.get_text(" ", strip=True)) if snippet_el else ""
+        snippet = (
+            _normalize_whitespace(snippet_el.get_text(" ", strip=True))
+            if snippet_el
+            else ""
+        )
         out.append(
             {
                 "url": _normalize_link(href),
@@ -212,9 +228,13 @@ async def _search_google_html(client: httpx.AsyncClient, query: str, limit: int)
     return out
 
 
-async def _fetch_page_text(client: httpx.AsyncClient, url: str, max_chars: int = 2800) -> str:
+async def _fetch_page_text(
+    client: httpx.AsyncClient, url: str, max_chars: int = 2800
+) -> str:
     try:
-        response = await client.get(url, follow_redirects=True, timeout=httpx.Timeout(10.0))
+        response = await client.get(
+            url, follow_redirects=True, timeout=httpx.Timeout(10.0)
+        )
         response.raise_for_status()
     except httpx.HTTPError:
         return ""
@@ -258,21 +278,29 @@ def _build_clarification_questions(
         questions.append(
             f"I found multiple people named {name}. What is their current or past company?"
         )
-        questions.append("What is their role/title (for example, Engineer, Founder, PM)?")
+        questions.append(
+            "What is their role/title (for example, Engineer, Founder, PM)?"
+        )
         questions.append("Do you have a LinkedIn profile URL for the exact person?")
         return questions
 
     if len(candidates) > 1:
         options = []
         for candidate in candidates[:3]:
-            option = candidate.get("company_hint") or candidate.get("profile_url") or candidate["label"]
+            option = (
+                candidate.get("company_hint")
+                or candidate.get("profile_url")
+                or candidate["label"]
+            )
             options.append(option)
         questions.append(
             "I still see overlapping profiles. Which one matches your target person: "
             + " | ".join(options)
             + " ?"
         )
-        questions.append("Can you add one more qualifier like location, school, or exact title?")
+        questions.append(
+            "Can you add one more qualifier like location, school, or exact title?"
+        )
 
     questions.append("If possible, share the LinkedIn URL to remove ambiguity.")
     return questions
@@ -314,8 +342,12 @@ async def build_profile_intelligence(
     qualifiers: list[str],
     max_sources: int,
 ) -> dict[str, Any]:
-    logger.info(f"Building profile intelligence for name='{name}' linkedin='{linkedin_url}'")
-    inferred_name = name or (linkedin_url and _extract_name_from_linkedin(linkedin_url)) or ""
+    logger.info(
+        f"Building profile intelligence for name='{name}' linkedin='{linkedin_url}'"
+    )
+    inferred_name = (
+        name or (linkedin_url and _extract_name_from_linkedin(linkedin_url)) or ""
+    )
     inferred_name = _normalize_whitespace(inferred_name)
     query_name = inferred_name
 
@@ -327,14 +359,16 @@ async def build_profile_intelligence(
             "status": "needs_clarification",
             "query": "",
             "disambiguated": False,
-            "clarification_questions": ["Please provide at least a name or a LinkedIn profile URL."],
+            "clarification_questions": [
+                "Please provide at least a name or a LinkedIn profile URL."
+            ],
             "candidates": [],
             "sources": [],
             "summary": "Insufficient input.",
         }
 
     base = query_name or " ".join(qualifiers) or (linkedin_url or "")
-    
+
     logger.info("Generating search queries via agent for intelligence report...")
     search_queries = generate_search_queries(
         name=query_name or base,
@@ -342,19 +376,28 @@ async def build_profile_intelligence(
     )
     if not search_queries:
         search_queries = [base]
-    
+
     if linkedin_url:
         search_queries.append(linkedin_url)
-    search_queries = list(dict.fromkeys(_normalize_whitespace(item) for item in search_queries if item.strip()))
+    search_queries = list(
+        dict.fromkeys(
+            _normalize_whitespace(item) for item in search_queries if item.strip()
+        )
+    )
 
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     dedup_by_url: dict[str, SearchHit] = {}
 
     async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=timeout) as client:
-        tasks = [_search_google_html(client, query, limit=8) for query in search_queries[:6]]
+        tasks = [
+            _search_google_html(client, query, limit=8) for query in search_queries[:6]
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=False)
         if not any(results):
-            fallback_tasks = [_search_duckduckgo(client, query, limit=8) for query in search_queries[:6]]
+            fallback_tasks = [
+                _search_duckduckgo(client, query, limit=8)
+                for query in search_queries[:6]
+            ]
             results = await asyncio.gather(*fallback_tasks, return_exceptions=False)
         for hits in results:
             for item in hits:
@@ -380,7 +423,9 @@ async def build_profile_intelligence(
                 if current is None or hit.relevance > current.relevance:
                     dedup_by_url[hit.url] = hit
 
-        ranked_hits = sorted(dedup_by_url.values(), key=lambda value: value.relevance, reverse=True)
+        ranked_hits = sorted(
+            dedup_by_url.values(), key=lambda value: value.relevance, reverse=True
+        )
 
         grouped: dict[str, list[SearchHit]] = {}
         for hit in ranked_hits[:30]:
@@ -397,7 +442,9 @@ async def build_profile_intelligence(
                 {
                     "label": (lead.title[:120] if lead.title else key),
                     "confidence": confidence,
-                    "profile_url": lead.url if lead.source in {"linkedin", "github"} else None,
+                    "profile_url": (
+                        lead.url if lead.source in {"linkedin", "github"} else None
+                    ),
                     "company_hint": company_hint,
                     "evidence": [item.snippet for item in top if item.snippet][:3],
                 }
