@@ -1,16 +1,16 @@
-from typing import Any
 import asyncio
+from typing import Any
+
+import httpx
+from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from app.extractors import extract_signals
-from app.llm.tools import reflective_score_adjustment, generate_search_queries
-from app.scoring import compute_deterministic_score, default_reasoning, make_decision
-from app.scrapers import scrape_sources, ScrapeResult
-from app.search_provider import search_web
+from app.llm.tools import generate_search_queries, reflective_score_adjustment
 from app.logger import logger
-import httpx
-from bs4 import BeautifulSoup
-import re
+from app.scoring import compute_deterministic_score, default_reasoning, make_decision
+from app.scrapers import ScrapeResult
+from app.search_provider import search_web
 
 
 async def _fetch_and_parse(url: str, source: str) -> ScrapeResult:
@@ -20,19 +20,19 @@ async def _fetch_and_parse(url: str, source: str) -> ScrapeResult:
             response = await client.get(url, follow_redirects=True)
             response.raise_for_status()
             text = response.text
-            
+
             # Simple text extraction
-            soup = BeautifulSoup(text, 'html.parser')
+            soup = BeautifulSoup(text, "html.parser")
             for tag in soup(["script", "style", "noscript", "svg"]):
                 tag.decompose()
             clean_text = " ".join(soup.get_text(" ", strip=True).split())
-            
+
             return ScrapeResult(
                 source=source,
                 url=url,
                 ok=True,
-                text=clean_text[:5000], # Cap text size
-                metadata={}
+                text=clean_text[:5000],  # Cap text size
+                metadata={},
             )
     except Exception as e:
         logger.warning(f"Failed to fetch content from {url}: {e}")
@@ -54,21 +54,23 @@ async def evaluate_profile(
         name=name,
         github_url=github_url,
         website_url=website_url,
-        twitter_url=twitter_url
+        twitter_url=twitter_url,
     )
     logger.info(f"Queries generated: {queries}")
 
     # 2. Execute searches
     logger.info("Executing searches...")
-    search_tasks = [search_web(q, limit=3) for q in queries[:3]] # limit to top 3 queries for perf
+    search_tasks = [
+        search_web(q, limit=3) for q in queries[:3]
+    ]  # limit to top 3 queries for perf
     search_results_lists = await asyncio.gather(*search_tasks)
-    
+
     unique_urls = {}
     for results in search_results_lists:
         for res in results:
             if res.url not in unique_urls:
                 unique_urls[res.url] = res
-    
+
     logger.info(f"Found {len(unique_urls)} unique search results.")
 
     # 3. Fetch content from results (up to top 5)
@@ -77,9 +79,11 @@ async def evaluate_profile(
     for url in top_urls:
         source = unique_urls[url].source_domain
         fetch_tasks.append(_fetch_and_parse(url, source))
-    
+
     scraped = await asyncio.gather(*fetch_tasks)
     scrape_failures = [s.__dict__ for s in scraped if not s.ok]
+
+    logger.info(f"Scraped content: {scraped}")
 
     # NOTE: Original scraping code is preserved in app/scrapers.py but not invoked here as per user request.
     # The 'scraped' list now contains results from Google search results content.

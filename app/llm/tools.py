@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 import google.generativeai as genai
 from groq import Groq
+
 from app.config import get_settings
 from app.logger import logger
 
@@ -23,7 +24,9 @@ def build_profile_summary(signals: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def reflective_score_adjustment(signals: dict[str, Any], deterministic_score: int) -> tuple[int, str]:
+def reflective_score_adjustment(
+    signals: dict[str, Any], deterministic_score: int
+) -> tuple[int, str]:
     if not settings.llm_reflection_enabled or not settings.groq_api_key:
         logger.debug("LLM reflection disabled.")
         return 0, "LLM reflection disabled."
@@ -115,30 +118,29 @@ def generate_search_queries(
 ) -> list[str]:
     """Uses an LLM agent to determine the best Google search queries for a profile."""
     logger.info(f"Generating search queries for {name}...")
-    if not settings.openai_api_key:
-        # Fallback to simple queries if no LLM
-        queries = []
-        if name:
-            queries.append(name)
-            if company:
-                queries.append(f"{name} {company}")
-        return queries
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel(settings.gemini_model)
 
-    from openai import OpenAI
-    client = OpenAI(api_key=settings.openai_api_key)
-    
     context = []
-    if name: context.append(f"Name: {name}")
-    if github_url: context.append(f"GitHub: {github_url}")
-    if website_url: context.append(f"Website: {website_url}")
-    if twitter_url: context.append(f"Twitter: {twitter_url}")
-    if linkedin_url: context.append(f"LinkedIn: {linkedin_url}")
-    if company: context.append(f"Company: {company}")
-    if designation: context.append(f"Designation: {designation}")
-    if location: context.append(f"Location: {location}")
-    
+    if name:
+        context.append(f"Name: {name}")
+    if github_url:
+        context.append(f"GitHub: {github_url}")
+    if website_url:
+        context.append(f"Website: {website_url}")
+    if twitter_url:
+        context.append(f"Twitter: {twitter_url}")
+    if linkedin_url:
+        context.append(f"LinkedIn: {linkedin_url}")
+    if company:
+        context.append(f"Company: {company}")
+    if designation:
+        context.append(f"Designation: {designation}")
+    if location:
+        context.append(f"Location: {location}")
+
     context_str = "\n".join(context)
-    
+
     prompt = (
         "You are an expert OSINT researcher. Given the following profile information, "
         "generate 5-7 highly targeted Google search queries to find the most relevant "
@@ -148,13 +150,15 @@ def generate_search_queries(
     )
 
     try:
-        completion = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.3,
-            response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": prompt}],
+        completion = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.3,
+                "response_mime_type": "application/json",
+            },
         )
-        payload = json.loads(completion.choices[0].message.content)
+        payload_text = completion.text or ""
+        payload = json.loads(payload_text)
         return payload.get("queries", [])
     except Exception:
         # Fallback
