@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.llm.tools import generate_scraper_script
 from app.models import ScraperExecutionLog, ScraperScript
+from app.logger import logger
 
 settings = get_settings()
 
@@ -347,6 +348,7 @@ async def scrape_sources(
     website_url: Optional[str],
     twitter_url: Optional[str],
 ) -> tuple[list[ScrapeResult], list[dict[str, Any]]]:
+    logger.info("Direct scraping requested (legacy).")
     _remove_legacy_default_scripts(db)
 
     urls: list[tuple[str, str]] = []

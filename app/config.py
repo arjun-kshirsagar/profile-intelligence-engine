@@ -11,6 +11,8 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/profile_engine"
     )
     request_timeout_seconds: float = 8.0
+    google_cse_api_key: Optional[str] = None
+    google_cse_cx: Optional[str] = None
 
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4.1-mini"

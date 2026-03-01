@@ -3,13 +3,16 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
 from app.config import get_settings
+from app.search_provider import SearchResult, search_web
+from app.logger import logger
+from app.llm.tools import generate_search_queries
 
 settings = get_settings()
 
@@ -48,16 +51,6 @@ MAJOR_NEWS_DOMAINS = {
     "economictimes.indiatimes.com",
     "business-standard.com",
 }
-
-
-@dataclass
-class SearchResult:
-    title: str
-    url: str
-    snippet: str
-    source_domain: str
-
-
 @dataclass
 class Candidate:
     result: SearchResult
@@ -69,15 +62,6 @@ class Candidate:
 
 def _normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
-
-
-def _normalize_link(url: str) -> str:
-    parsed = urlparse(url)
-    if "duckduckgo.com" in parsed.netloc and parsed.path == "/l/":
-        target = parse_qs(parsed.query).get("uddg", [])
-        if target:
-            return unquote(target[0])
-    return url
 
 
 def _domain(url: str) -> str:
@@ -180,79 +164,23 @@ def _build_queries(input_payload: dict[str, Optional[str]]) -> tuple[list[str], 
         queries.append(linkedin_url)
 
     if name:
-        qualifiers = " ".join(filter(None, [company, designation, location]))
-        if company:
-            queries.extend(
-                [
-                    f'"{name}" "{company}"',
-                    f'"{name}" "{company}" interview',
-                    f'"{name}" "{company}" site:linkedin.com',
-                    f'"{name}" "{company}" site:github.com',
-                    f'"{name}" "{company}" site:youtube.com',
-                    f'"{name}" "{company}" news',
-                ]
-            )
-        else:
-            ambiguity_risk = True
-            queries.extend(
-                [
-                    f'"{name}" linkedin',
-                    f'"{name}" profile',
-                    f'"{name}" github',
-                    f'"{name}" interview',
-                ]
-            )
-
-        if qualifiers:
-            queries.append(f'"{name}" {qualifiers}')
+        logger.info("Generating search queries via agent for profile resolution...")
+        queries = generate_search_queries(
+            name=name,
+            linkedin_url=linkedin_url,
+            company=company,
+            designation=designation,
+            location=location
+        )
+        if not queries:
+            queries = [name]
 
     return list(dict.fromkeys(q for q in queries if q.strip())), ambiguity_risk
 
 
-async def _search_duckduckgo(client: httpx.AsyncClient, query: str, limit: int) -> list[SearchResult]:
-    try:
-        response = await client.get(
-            "https://duckduckgo.com/html/",
-            params={"q": query},
-            follow_redirects=True,
-            timeout=httpx.Timeout(settings.request_timeout_seconds),
-        )
-        response.raise_for_status()
-    except httpx.HTTPError:
-        return []
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    results: list[SearchResult] = []
-    for block in soup.select(".result"):
-        link_el = block.select_one(".result__a")
-        if not link_el:
-            continue
-        href = _normalize_link(link_el.get("href", "").strip())
-        if not href:
-            continue
-
-        snippet_el = block.select_one(".result__snippet")
-        snippet = _normalize_whitespace(snippet_el.get_text(" ", strip=True) if snippet_el else "")
-
-        results.append(
-            SearchResult(
-                title=_normalize_whitespace(link_el.get_text(" ", strip=True)),
-                url=href,
-                snippet=snippet,
-                source_domain=_domain(href),
-            )
-        )
-        if len(results) >= limit:
-            break
-
-    return results
-
-
-async def _search_web(queries: list[str], max_per_query: int) -> list[SearchResult]:
-    timeout = httpx.Timeout(settings.request_timeout_seconds)
-    async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=timeout) as client:
-        tasks = [_search_duckduckgo(client, query, max_per_query) for query in queries]
-        grouped_results = await asyncio.gather(*tasks, return_exceptions=False)
+async def _search_queries(queries: list[str], max_per_query: int) -> list[SearchResult]:
+    tasks = [search_web(query, limit=max_per_query) for query in queries]
+    grouped_results = await asyncio.gather(*tasks, return_exceptions=False)
 
     dedup: dict[str, SearchResult] = {}
     for hits in grouped_results:
@@ -333,14 +261,21 @@ async def _extract_candidates(
     input_payload: dict[str, Optional[str]],
     max_sources: int,
 ) -> list[Candidate]:
+    # Fetch full page content only for the top-K ranked URLs to control cost/latency.
+    full_fetch_limit = min(3, max_sources)
+    ranked_results = search_results[: max_sources * 2]
+
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=timeout) as client:
-        tasks = [_fetch_page_text(client, result.url) for result in search_results[: max_sources * 2]]
+        tasks = [
+            _fetch_page_text(client, result.url) if index < full_fetch_limit else asyncio.sleep(0, result= "")
+            for index, result in enumerate(ranked_results)
+        ]
         page_texts = await asyncio.gather(*tasks, return_exceptions=False)
 
     candidates: list[Candidate] = []
 
-    for result, page_text in zip(search_results[: max_sources * 2], page_texts):
+    for result, page_text in zip(ranked_results, page_texts):
         extracted = _llm_extract(result, page_text) or _heuristic_extract(result, page_text)
 
         if not extracted.get("name") and input_payload.get("name"):
@@ -473,6 +408,7 @@ async def resolve_profile(
     location: Optional[str],
     max_sources: int,
 ) -> dict[str, Any]:
+    logger.info(f"Resolving profile for: name={name}, linkedin={linkedin_url}")
     inferred_name = name or _extract_name_from_linkedin_url(linkedin_url)
     input_payload = {
         "linkedin_url": linkedin_url,
@@ -483,7 +419,7 @@ async def resolve_profile(
     }
 
     queries, ambiguity_risk = _build_queries(input_payload)
-    search_results = await _search_web(queries=queries[:8], max_per_query=8)
+    search_results = await _search_queries(queries=queries[:8], max_per_query=5)
 
     # Always include direct LinkedIn URL as a high-priority candidate when supplied.
     if linkedin_url and all(linkedin_url != item.url for item in search_results):

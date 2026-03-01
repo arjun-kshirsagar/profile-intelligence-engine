@@ -1,4 +1,5 @@
 from typing import Any
+from app.logger import logger
 
 WEIGHTS = {
     "experience": 0.30,
@@ -18,6 +19,7 @@ def _cap(value: float, max_value: float) -> float:
 
 
 def compute_deterministic_score(signals: dict[str, Any]) -> tuple[int, dict[str, float]]:
+    logger.debug(f"Computing deterministic score for signals: {signals}")
     experience = _cap(signals.get("years_experience", 0), 15)
 
     impact = (

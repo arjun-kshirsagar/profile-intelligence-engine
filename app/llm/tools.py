@@ -1,10 +1,10 @@
 import json
-from typing import Any
+from typing import Any, Optional
 
 import google.generativeai as genai
 from groq import Groq
-
 from app.config import get_settings
+from app.logger import logger
 
 settings = get_settings()
 
@@ -25,6 +25,7 @@ def build_profile_summary(signals: dict[str, Any]) -> str:
 
 def reflective_score_adjustment(signals: dict[str, Any], deterministic_score: int) -> tuple[int, str]:
     if not settings.llm_reflection_enabled or not settings.groq_api_key:
+        logger.debug("LLM reflection disabled.")
         return 0, "LLM reflection disabled."
 
     client = Groq(api_key=settings.groq_api_key)
@@ -100,3 +101,61 @@ def generate_scraper_script(
         return None, "Gemini response missing a valid extract(html, url) function."
     except Exception as exc:
         return None, f"Gemini script generation failed: {exc}"
+
+
+def generate_search_queries(
+    name: Optional[str],
+    github_url: Optional[str] = None,
+    website_url: Optional[str] = None,
+    twitter_url: Optional[str] = None,
+    linkedin_url: Optional[str] = None,
+    company: Optional[str] = None,
+    designation: Optional[str] = None,
+    location: Optional[str] = None,
+) -> list[str]:
+    """Uses an LLM agent to determine the best Google search queries for a profile."""
+    logger.info(f"Generating search queries for {name}...")
+    if not settings.openai_api_key:
+        # Fallback to simple queries if no LLM
+        queries = []
+        if name:
+            queries.append(name)
+            if company:
+                queries.append(f"{name} {company}")
+        return queries
+
+    from openai import OpenAI
+    client = OpenAI(api_key=settings.openai_api_key)
+    
+    context = []
+    if name: context.append(f"Name: {name}")
+    if github_url: context.append(f"GitHub: {github_url}")
+    if website_url: context.append(f"Website: {website_url}")
+    if twitter_url: context.append(f"Twitter: {twitter_url}")
+    if linkedin_url: context.append(f"LinkedIn: {linkedin_url}")
+    if company: context.append(f"Company: {company}")
+    if designation: context.append(f"Designation: {designation}")
+    if location: context.append(f"Location: {location}")
+    
+    context_str = "\n".join(context)
+    
+    prompt = (
+        "You are an expert OSINT researcher. Given the following profile information, "
+        "generate 5-7 highly targeted Google search queries to find the most relevant "
+        "professional information about this person. Focus on finding their current role, "
+        "contributions, and public profile. Return strict JSON only with key 'queries' (list of strings).\n\n"
+        f"Profile Info:\n{context_str}"
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model=settings.openai_model,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        payload = json.loads(completion.choices[0].message.content)
+        return payload.get("queries", [])
+    except Exception:
+        # Fallback
+        return [name] if name else []

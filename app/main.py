@@ -14,17 +14,20 @@ from app.schemas import (
     ResolveProfileResponse,
 )
 from app.service import evaluate_profile
+from app.logger import logger
 
 app = FastAPI(title="Profile Intelligence Engine", version="0.3.0")
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    logger.debug("Health check requested")
     return {"status": "ok"}
 
 
 @app.post("/evaluate", response_model=EvaluationResponse)
 async def evaluate(payload: ProfileInput, db: Session = Depends(get_db)) -> EvaluationResponse:
+    logger.info(f"POST /evaluate request received for: {payload.name}")
     result = await evaluate_profile(
         db=db,
         name=payload.name,
@@ -54,6 +57,7 @@ async def evaluate(payload: ProfileInput, db: Session = Depends(get_db)) -> Eval
 
 @app.post("/intelligence", response_model=IntelligenceResponse)
 async def intelligence(payload: IntelligenceInput, db: Session = Depends(get_db)) -> IntelligenceResponse:
+    logger.info(f"POST /intelligence request received for: {payload.name or payload.linkedin_url}")
     result = await build_profile_intelligence(
         linkedin_url=payload.linkedin_url,
         name=payload.name,
@@ -84,6 +88,7 @@ async def resolve_profile_endpoint(
     payload: ResolveProfileInput,
     db: Session = Depends(get_db),
 ) -> ResolveProfileResponse:
+    logger.info(f"POST /resolve-profile request received for: {payload.name or payload.linkedin_url}")
     result = await resolve_profile(
         linkedin_url=payload.linkedin_url,
         name=payload.name,

@@ -8,6 +8,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.config import get_settings
+from app.logger import logger
+from app.llm.tools import generate_search_queries
 
 settings = get_settings()
 
@@ -312,6 +314,7 @@ async def build_profile_intelligence(
     qualifiers: list[str],
     max_sources: int,
 ) -> dict[str, Any]:
+    logger.info(f"Building profile intelligence for name='{name}' linkedin='{linkedin_url}'")
     inferred_name = name or (linkedin_url and _extract_name_from_linkedin(linkedin_url)) or ""
     inferred_name = _normalize_whitespace(inferred_name)
     query_name = inferred_name
@@ -331,14 +334,15 @@ async def build_profile_intelligence(
         }
 
     base = query_name or " ".join(qualifiers) or (linkedin_url or "")
-    search_queries = [
-        f'"{base}" {" ".join(qualifiers)}',
-        f'"{base}" {" ".join(qualifiers)} linkedin',
-        f'"{base}" {" ".join(qualifiers)} github',
-        f'"{base}" {" ".join(qualifiers)} youtube interview',
-        f'"{base}" {" ".join(qualifiers)} about.me',
-        f'"{base}" {" ".join(qualifiers)} news',
-    ]
+    
+    logger.info("Generating search queries via agent for intelligence report...")
+    search_queries = generate_search_queries(
+        name=query_name or base,
+        linkedin_url=linkedin_url,
+    )
+    if not search_queries:
+        search_queries = [base]
+    
     if linkedin_url:
         search_queries.append(linkedin_url)
     search_queries = list(dict.fromkeys(_normalize_whitespace(item) for item in search_queries if item.strip()))
