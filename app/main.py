@@ -2,8 +2,14 @@ from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
 from app.db import Base, engine, get_db
-from app.models import ProfileEvaluation
-from app.schemas import EvaluationResponse, ProfileInput
+from app.intelligence import build_profile_intelligence
+from app.models import ProfileEvaluation, ProfileIntelligenceReport
+from app.schemas import (
+    EvaluationResponse,
+    IntelligenceInput,
+    IntelligenceResponse,
+    ProfileInput,
+)
 from app.service import evaluate_profile
 
 app = FastAPI(title="Profile Intelligence Engine", version="0.2.0")
@@ -46,3 +52,30 @@ async def evaluate(payload: ProfileInput, db: Session = Depends(get_db)) -> Eval
     db.commit()
 
     return EvaluationResponse(**result)
+
+
+@app.post("/intelligence", response_model=IntelligenceResponse)
+async def intelligence(payload: IntelligenceInput, db: Session = Depends(get_db)) -> IntelligenceResponse:
+    result = await build_profile_intelligence(
+        linkedin_url=payload.linkedin_url,
+        name=payload.name,
+        qualifiers=payload.qualifiers,
+        max_sources=payload.max_sources,
+    )
+
+    row = ProfileIntelligenceReport(
+        query_input=result["query"],
+        name=payload.name,
+        linkedin_url=payload.linkedin_url,
+        qualifiers=payload.qualifiers,
+        status=result["status"],
+        disambiguated=result["disambiguated"],
+        clarification_questions=result["clarification_questions"],
+        candidates=result["candidates"],
+        sources=result["sources"],
+        summary=result["summary"],
+    )
+    db.add(row)
+    db.commit()
+
+    return IntelligenceResponse(**result)

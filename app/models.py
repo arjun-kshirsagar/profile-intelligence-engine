@@ -60,3 +60,22 @@ class ScraperExecutionLog(Base):
     error = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ProfileIntelligenceReport(Base):
+    __tablename__ = "profile_intelligence_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    query_input = Column(String(300), nullable=False)
+    name = Column(String(200), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    qualifiers = Column(JSON, nullable=False, default=list)
+
+    status = Column(String(30), nullable=False)
+    disambiguated = Column(Boolean, nullable=False, default=False)
+    clarification_questions = Column(JSON, nullable=False, default=list)
+    candidates = Column(JSON, nullable=False, default=list)
+    sources = Column(JSON, nullable=False, default=list)
+    summary = Column(Text, nullable=False, default="")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

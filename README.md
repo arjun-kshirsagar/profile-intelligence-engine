@@ -23,12 +23,14 @@ Components:
 ## 4. Scraper-agent loop
 For each source (`github`, `website`, `twitter`):
 1. Fetch HTML.
-2. Try active scripts from `scraper_scripts` (best-performing first).
+2. Check `scraper_scripts` for active scripts and try them (best-performing first).
 3. If a script succeeds, use it and update success metrics.
-4. If a script fails, capture `script_code` + `error` and keep trying.
-5. If all fail, optionally ask LLM to generate a replacement parser script.
-6. If generated script succeeds, save it to DB for future runs.
-7. If generation fails, return failure diagnostics in API response.
+4. If active scripts exist but fail, return failure diagnostics from those attempts.
+5. If no script succeeds, use Gemini (`GEMINI_MODEL`, default `gemini-3-flash`) to generate parser code.
+6. Run generated code immediately. If it fails, capture full traceback and send that error back to Gemini for the next attempt.
+7. Retry generation up to `SCRIPT_GENERATION_MAX_ATTEMPTS`.
+8. If a generated script succeeds, save it as active in DB and use it immediately.
+9. If all attempts fail, return full failure diagnostics in API response.
 
 This gives agent-like adaptation without full multi-agent orchestration.
 
@@ -78,6 +80,62 @@ Request body:
 }
 ```
 
+### `POST /intelligence`
+Accepts either:
+- `linkedin_url`, or
+- `name` + optional `qualifiers` (company/title/location etc).
+
+If identity is ambiguous, API returns `needs_clarification` with targeted questions.
+If identity is resolved, API runs Google search discovery (with fallback), crawls multi-source web evidence, and returns confidence-scored source records plus a merged summary.
+
+Request body:
+```json
+{
+  "name": "Amit Sharma",
+  "qualifiers": ["Delhivery"],
+  "max_sources": 12
+}
+```
+
+Resolved response shape:
+```json
+{
+  "status": "resolved",
+  "query": "Amit Sharma",
+  "disambiguated": true,
+  "clarification_questions": [],
+  "candidates": [],
+  "sources": [
+    {
+      "source": "linkedin",
+      "url": "https://www.linkedin.com/in/...",
+      "title": "...",
+      "snippet": "...",
+      "text": "...",
+      "confidence": 0.86
+    }
+  ],
+  "summary": "Identity resolved for Amit Sharma. Aggregated evidence from 10 sources..."
+}
+```
+
+Clarification response shape:
+```json
+{
+  "status": "needs_clarification",
+  "query": "Amit Sharma",
+  "disambiguated": false,
+  "clarification_questions": [
+    "I found multiple people named Amit Sharma. What is their current or past company?",
+    "What is their role/title (for example, Engineer, Founder, PM)?",
+    "Do you have a LinkedIn profile URL for the exact person?"
+  ],
+  "candidates": [],
+  "sources": [],
+  "summary": "Partial match..."
+}
+```
+
 Response includes `scrape_failures` whenever any script attempts fail:
 ```json
 {
@@ -92,7 +150,7 @@ Response includes `scrape_failures` whenever any script attempts fail:
       "source": "github",
       "url": "https://github.com/janedoe",
       "script_id": 1,
-      "script_name": "default_github_v1",
+      "script_name": "generated_github",
       "script_code": "def extract(...)",
       "error": "ValueError: ..."
     }
@@ -120,3 +178,4 @@ uvicorn app.main:app --reload
 ## Notes
 - This is an MVP and intentionally avoids microservices, queues, and background workers.
 - SQLAlchemy table creation happens at app startup for simplicity.
+- Gemini-based script generation requires `GEMINI_API_KEY` in environment.

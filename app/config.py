@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.3-70b-versatile"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-3-flash"
+    script_generation_max_attempts: int = 4
     llm_reflection_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
