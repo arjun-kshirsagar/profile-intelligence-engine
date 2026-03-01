@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     script_generation_max_attempts: int = 4
     llm_reflection_enabled: bool = False
 
+    celery_broker_url: str = Field(default="redis://localhost:6379/0")
+    celery_result_backend: str = Field(default="redis://localhost:6379/0")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

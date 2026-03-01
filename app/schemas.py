@@ -1,6 +1,30 @@
+import enum
 from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+
+class EvaluationStatusEnum(str, enum.Enum):
+    QUEUED = "QUEUED"
+    IN_PROGRESS = "IN_PROGRESS"
+    FAILED = "FAILED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+
+
+class JobInput(BaseModel):
+    input_type: str = Field(
+        ..., pattern="^(linkedin_url|name_company|github_url|email)$"
+    )
+    input_value: str = Field(..., min_length=1)
+    priority: str = Field(default="normal", pattern="^(low|normal|high)$")
+
+
+class JobResponse(BaseModel):
+    evaluation_id: int
+    status: EvaluationStatusEnum
+    estimated_time_seconds: int = 45
 
 
 class ProfileInput(BaseModel):
