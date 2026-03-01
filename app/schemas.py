@@ -1,5 +1,5 @@
 import enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -25,6 +25,14 @@ class JobResponse(BaseModel):
     evaluation_id: int
     status: EvaluationStatusEnum
     estimated_time_seconds: int = 45
+
+
+class SignalSchema(BaseModel):
+    execution_score: float = 0.0
+    technical_depth_score: float = 0.0
+    influence_score: float = 0.0
+    recognition_score: float = 0.0
+    raw_features: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProfileInput(BaseModel):

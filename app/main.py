@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.intelligence import build_profile_intelligence
 from app.logger import logger
 from app.models import (
@@ -11,6 +11,7 @@ from app.models import (
     ProfileEvaluation,
     ProfileIntelligenceReport,
     ProfileResolutionReport,
+    ScoringConfig,
 )
 from app.profile_resolution import resolve_profile
 from app.schemas import (
@@ -28,6 +29,30 @@ from app.service import evaluate_profile
 from app.tasks import run_evaluation_pipeline
 
 app = FastAPI(title="Profile Intelligence Engine", version="0.3.0")
+
+
+@app.on_event("startup")
+def seed_default_config():
+    """Ensure a default scoring configuration exists."""
+    db = SessionLocal()
+    try:
+        if not db.query(ScoringConfig).first():
+            logger.info("Seeding default scoring configuration v1.0")
+            default_config = ScoringConfig(
+                version="v1.0",
+                weights_json={
+                    "execution": 0.30,
+                    "technical_depth": 0.25,
+                    "influence": 0.20,
+                    "recognition": 0.25,
+                },
+                thresholds_json={"admit": 80, "manual_review": 65},
+                is_active=True,
+            )
+            db.add(default_config)
+            db.commit()
+    finally:
+        db.close()
 
 
 @app.get("/health")

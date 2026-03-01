@@ -10,7 +10,9 @@ from app.collectors.linkedin_collector import LinkedInCollector
 from app.collectors.web_search_collector import WebSearchCollector
 from app.db import SessionLocal
 from app.logger import logger
-from app.models import Evaluation, EvaluationStage, EvaluationStatus
+from app.models import Evaluation, EvaluationStage, EvaluationStatus, Signal
+from app.scoring_engine import ScoringEngine
+from app.signal_extractor import SignalExtractor
 
 
 @celery_app.task(
@@ -74,18 +76,47 @@ def run_evaluation_pipeline(self, evaluation_id: int):
 
         # Phase 3: Signal Extraction
         _update_stage(db, evaluation, EvaluationStage.SIGNAL_EXTRACTION)
-        # TODO: Implement signal extraction logic
-        time.sleep(1)
+
+        extractor = SignalExtractor()
+        extracted_signals = extractor.extract(person.metadata_json)
+
+        # Store signals in DB
+        signal_row = (
+            db.query(Signal).filter(Signal.evaluation_id == evaluation.id).first()
+        )
+        if not signal_row:
+            signal_row = Signal(evaluation_id=evaluation.id)
+            db.add(signal_row)
+
+        signal_row.execution_score = extracted_signals.execution_score
+        signal_row.technical_depth_score = extracted_signals.technical_depth_score
+        signal_row.influence_score = extracted_signals.influence_score
+        signal_row.recognition_score = extracted_signals.recognition_score
+        signal_row.raw_features_json = extracted_signals.raw_features
+        db.commit()
 
         # Phase 4: Scoring
         _update_stage(db, evaluation, EvaluationStage.SCORING)
-        # TODO: Implement scoring logic
-        time.sleep(1)
+
+        scoring_engine = ScoringEngine(db)
+        final_score, decision, scoring_version = scoring_engine.compute_and_decide(
+            signal_row
+        )
+
+        evaluation.final_score = final_score
+        db.commit()
 
         # Phase 5: Decision
         _update_stage(db, evaluation, EvaluationStage.DECISION)
-        # TODO: Implement decision logic
-        evaluation.status = EvaluationStatus.COMPLETED
+
+        evaluation.decision = decision
+
+        # If score is between thresholds, explicitly mark as MANUAL_REVIEW
+        if decision == "MANUAL_REVIEW":
+            evaluation.status = EvaluationStatus.MANUAL_REVIEW
+        else:
+            evaluation.status = EvaluationStatus.COMPLETED
+
         evaluation.completed_at = datetime.utcnow()
         db.commit()
 
