@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 
 from app.db import Base
@@ -77,5 +77,25 @@ class ProfileIntelligenceReport(Base):
     candidates = Column(JSON, nullable=False, default=list)
     sources = Column(JSON, nullable=False, default=list)
     summary = Column(Text, nullable=False, default="")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ProfileResolutionReport(Base):
+    __tablename__ = "profile_resolution_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    input_payload = Column(JSON, nullable=False)
+
+    resolved_name = Column(String(200), nullable=True)
+    resolved_company = Column(String(200), nullable=True)
+    resolved_designation = Column(String(200), nullable=True)
+    resolved_location = Column(String(200), nullable=True)
+    resolved_confidence = Column(Float, nullable=False, default=0.0)
+
+    ambiguity_flag = Column(Boolean, nullable=False, default=False)
+    clarification_question = Column(Text, nullable=True)
+    sources = Column(JSON, nullable=False, default=list)
+    aggregated_summary = Column(Text, nullable=False, default="")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

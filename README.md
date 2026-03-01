@@ -97,6 +97,53 @@ Request body:
 }
 ```
 
+### `POST /resolve-profile`
+Agentic profile resolution endpoint for identity disambiguation and source confidence modeling.
+
+Request body:
+```json
+{
+  "name": "Amit Sharma",
+  "company": "Delhivery",
+  "designation": "VP Operations",
+  "location": "India",
+  "linkedin_url": "https://linkedin.com/in/...",
+  "max_sources": 12
+}
+```
+
+Response shape:
+```json
+{
+  "resolved_identity": {
+    "name": "Amit Sharma",
+    "company": "Delhivery",
+    "designation": "VP Operations",
+    "location": "India",
+    "confidence": 0.87
+  },
+  "ambiguity_flag": false,
+  "clarification_question": null,
+  "sources": [
+    {
+      "url": "https://www.linkedin.com/in/...",
+      "domain": "www.linkedin.com",
+      "type": "linkedin",
+      "confidence": 0.95,
+      "extracted_info": {
+        "name": "Amit Sharma",
+        "company": "Delhivery",
+        "designation": "VP Operations",
+        "location": "India",
+        "education": null,
+        "short_bio": "..."
+      }
+    }
+  ],
+  "aggregated_summary": "..."
+}
+```
+
 Resolved response shape:
 ```json
 {

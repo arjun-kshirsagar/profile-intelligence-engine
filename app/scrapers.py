@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.llm import generate_scraper_script
+from app.llm.tools import generate_scraper_script
 from app.models import ScraperExecutionLog, ScraperScript
 
 settings = get_settings()

@@ -3,21 +3,19 @@ from sqlalchemy.orm import Session
 
 from app.db import Base, engine, get_db
 from app.intelligence import build_profile_intelligence
-from app.models import ProfileEvaluation, ProfileIntelligenceReport
+from app.models import ProfileEvaluation, ProfileIntelligenceReport, ProfileResolutionReport
+from app.profile_resolution import resolve_profile
 from app.schemas import (
     EvaluationResponse,
     IntelligenceInput,
     IntelligenceResponse,
     ProfileInput,
+    ResolveProfileInput,
+    ResolveProfileResponse,
 )
 from app.service import evaluate_profile
 
-app = FastAPI(title="Profile Intelligence Engine", version="0.2.0")
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Profile Intelligence Engine", version="0.3.0")
 
 
 @app.get("/health")
@@ -79,3 +77,36 @@ async def intelligence(payload: IntelligenceInput, db: Session = Depends(get_db)
     db.commit()
 
     return IntelligenceResponse(**result)
+
+
+@app.post("/resolve-profile", response_model=ResolveProfileResponse)
+async def resolve_profile_endpoint(
+    payload: ResolveProfileInput,
+    db: Session = Depends(get_db),
+) -> ResolveProfileResponse:
+    result = await resolve_profile(
+        linkedin_url=payload.linkedin_url,
+        name=payload.name,
+        company=payload.company,
+        designation=payload.designation,
+        location=payload.location,
+        max_sources=payload.max_sources,
+    )
+
+    resolved_identity = result["resolved_identity"]
+    row = ProfileResolutionReport(
+        input_payload=payload.model_dump(),
+        resolved_name=resolved_identity.get("name"),
+        resolved_company=resolved_identity.get("company"),
+        resolved_designation=resolved_identity.get("designation"),
+        resolved_location=resolved_identity.get("location"),
+        resolved_confidence=resolved_identity.get("confidence", 0.0),
+        ambiguity_flag=result["ambiguity_flag"],
+        clarification_question=result.get("clarification_question"),
+        sources=result["sources"],
+        aggregated_summary=result["aggregated_summary"],
+    )
+    db.add(row)
+    db.commit()
+
+    return ResolveProfileResponse(**result)

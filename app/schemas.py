@@ -58,3 +58,51 @@ class IntelligenceResponse(BaseModel):
     candidates: list[CandidateRecord]
     sources: list[SourceRecord]
     summary: str
+
+
+class ResolveProfileInput(BaseModel):
+    linkedin_url: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    company: Optional[str] = None
+    designation: Optional[str] = None
+    location: Optional[str] = None
+    max_sources: int = Field(default=12, ge=3, le=25)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "ResolveProfileInput":
+        if not self.linkedin_url and not self.name:
+            raise ValueError("Either linkedin_url or name must be provided.")
+        return self
+
+
+class ExtractedInfo(BaseModel):
+    name: Optional[str] = None
+    company: Optional[str] = None
+    designation: Optional[str] = None
+    location: Optional[str] = None
+    education: Optional[str] = None
+    short_bio: Optional[str] = None
+
+
+class ResolvedIdentity(BaseModel):
+    name: Optional[str] = None
+    company: Optional[str] = None
+    designation: Optional[str] = None
+    location: Optional[str] = None
+    confidence: float = 0.0
+
+
+class ResolvedSource(BaseModel):
+    url: str
+    domain: str
+    type: str
+    confidence: float
+    extracted_info: ExtractedInfo
+
+
+class ResolveProfileResponse(BaseModel):
+    resolved_identity: ResolvedIdentity
+    ambiguity_flag: bool
+    clarification_question: Optional[str] = None
+    sources: list[ResolvedSource] = Field(default_factory=list)
+    aggregated_summary: str

@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.extractors import extract_signals
-from app.llm import reflective_score_adjustment
+from app.llm.tools import reflective_score_adjustment
 from app.scoring import compute_deterministic_score, default_reasoning, make_decision
 from app.scrapers import scrape_sources
 
