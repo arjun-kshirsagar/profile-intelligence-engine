@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.3-70b-versatile"
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-3-flash"
+    gemini_model: str = "gemini-2.5-flash"
     script_generation_max_attempts: int = 4
     llm_reflection_enabled: bool = False
 

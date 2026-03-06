@@ -35,6 +35,19 @@ class SignalSchema(BaseModel):
     raw_features: dict[str, Any] = Field(default_factory=dict)
 
 
+class EvaluationStatusResponse(BaseModel):
+    evaluation_id: int
+    status: str
+    stage: Optional[str] = None
+    final_score: Optional[float] = None
+    decision: Optional[str] = None
+    summary: Optional[str] = None
+    strengths: Optional[list[str]] = None
+    weaknesses: Optional[list[str]] = None
+    breakdown: Optional[SignalSchema] = None
+    progress: dict[str, str] = Field(default_factory=dict)
+
+
 class ProfileInput(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     github_url: Optional[str] = None

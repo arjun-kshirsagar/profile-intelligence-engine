@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
@@ -12,11 +12,13 @@ from app.models import (
     ProfileIntelligenceReport,
     ProfileResolutionReport,
     ScoringConfig,
+    Signal,
 )
 from app.profile_resolution import resolve_profile
 from app.schemas import (
     EvaluationResponse,
     EvaluationStatusEnum,
+    EvaluationStatusResponse,
     IntelligenceInput,
     IntelligenceResponse,
     JobInput,
@@ -24,6 +26,7 @@ from app.schemas import (
     ProfileInput,
     ResolveProfileInput,
     ResolveProfileResponse,
+    SignalSchema,
 )
 from app.service import evaluate_profile
 from app.tasks import run_evaluation_pipeline
@@ -200,26 +203,58 @@ async def create_evaluation_job(
     )
 
 
-@app.get("/v1/evaluations/{evaluation_id}")
-async def get_evaluation_status(
-    evaluation_id: int, db: Session = Depends(get_db)
-) -> dict:
+@app.get("/v1/evaluations/{evaluation_id}", response_model=EvaluationStatusResponse)
+async def get_evaluation_status(evaluation_id: int, db: Session = Depends(get_db)):
     evaluation = db.query(Evaluation).get(evaluation_id)
     if not evaluation:
-        return {"error": "Evaluation not found"}
+        raise HTTPException(status_code=404, detail="Evaluation not found")
 
-    return {
-        "evaluation_id": evaluation.id,
-        "status": evaluation.status.value,
-        "stage": evaluation.stage.value if evaluation.stage else None,
-        "final_score": (
-            evaluation.final_score
-            if evaluation.status == EvaluationStatus.COMPLETED
-            else None
-        ),
-        "decision": (
-            evaluation.decision
-            if evaluation.status == EvaluationStatus.COMPLETED
-            else None
-        ),
-    }
+    # Fetch signals if they exist
+    signals = db.query(Signal).filter(Signal.evaluation_id == evaluation.id).first()
+    breakdown = None
+    if signals:
+        breakdown = SignalSchema(
+            execution_score=signals.execution_score,
+            technical_depth_score=signals.technical_depth_score,
+            influence_score=signals.influence_score,
+            recognition_score=signals.recognition_score,
+            raw_features=signals.raw_features_json or {},
+        )
+
+    # Calculate stage progress mapping
+    stages = [
+        "IDENTITY_RESOLUTION",
+        "DATA_COLLECTION",
+        "SIGNAL_EXTRACTION",
+        "SCORING",
+        "DECISION",
+    ]
+    current_stage_value = evaluation.stage.value if evaluation.stage else None
+    progress = {}
+
+    found_current = False
+    for s in stages:
+        if evaluation.status == EvaluationStatus.COMPLETED:
+            progress[s] = "COMPLETED"
+        elif evaluation.status == EvaluationStatus.FAILED:
+            progress[s] = "FAILED"
+        elif current_stage_value == s:
+            progress[s] = "IN_PROGRESS"
+            found_current = True
+        elif not found_current:
+            progress[s] = "COMPLETED"
+        else:
+            progress[s] = "PENDING"
+
+    return EvaluationStatusResponse(
+        evaluation_id=evaluation.id,
+        status=evaluation.status.value,
+        stage=current_stage_value,
+        final_score=evaluation.final_score,
+        decision=evaluation.decision,
+        summary=evaluation.summary,
+        strengths=evaluation.strengths,
+        weaknesses=evaluation.weaknesses,
+        breakdown=breakdown,
+        progress=progress,
+    )

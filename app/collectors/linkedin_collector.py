@@ -20,12 +20,12 @@ class LinkedInCollector(CollectorBase):
         return {
             "source": "linkedin",
             "raw_data": {
-                "full_name": "John Doe",
+                "full_name": "Prashant Parashar",
                 "current_role": "Founder",
                 "current_company": "Stealth AI",
-                "headline": "Building the future of agentic systems | Ex-Google",
-                "location": "San Francisco, CA",
-                "experience_years": 8,
+                "headline": "Something brewing! [Previously: Head of Technology - Delhivery, Ola, Snapdeal, Zomato]",
+                "location": "Bangalore, India",
+                "experience_years": 20,
                 "skills": [
                     "Distributed Systems",
                     "Artificial Intelligence",
@@ -33,8 +33,8 @@ class LinkedInCollector(CollectorBase):
                 ],
                 "education": [
                     {
-                        "institution": "Stanford University",
-                        "degree": "MS in Computer Science",
+                        "institution": "B.I.E.T., Jhansi",
+                        "degree": "B.Tech in Computer Science",
                     }
                 ],
             },
